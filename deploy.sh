@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Deployment script for Brightness Shortcut Sysmodule
-# Title ID: 0x0100000000001337
+# Title ID: 0x0004000001EB3400
 
-TITLE_ID="0100000000001337"
+TITLE_ID="0004000001EB3400"
 NSP_FILE="sysmodule.nsp"
 
 echo "=== Brightness Shortcut Sysmodule Deployment Script ==="

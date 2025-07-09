@@ -40,13 +40,13 @@ The deploy script will automatically:
 If you prefer manual installation:
 
 1. Build the project using `make` (requires devkitPro and libnx)
-2. Copy the generated `.nsp` file to: `sdmc:/atmosphere/contents/0100000000001337/exefs.nsp`
-3. Create the boot flag file: `sdmc:/atmosphere/contents/0100000000001337/flags/boot2.flag`
+2. Copy the generated `.nsp` file to: `sdmc:/atmosphere/contents/0004000001EB3400/exefs.nsp`
+3. Create the boot flag file: `sdmc:/atmosphere/contents/0004000001EB3400/flags/boot2.flag`
 4. Reboot your Nintendo Switch
 
 ## Technical Details
 
--   **Title ID**: `0x0100000000001337`
+-   **Title ID**: `0x0004000001EB3400`
 -   **Services Used**: HID (input), LBL (backlight), AudioOut (sound effects), FS (file system)
 -   **CPU Usage**: Optimized with 50ms sleep intervals to minimize system impact
 -   **Audio**: 48kHz stereo output with generated sine wave tones

@@ -251,7 +251,7 @@ int main(int argc, char* argv[])
     FILE* logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "w");
     if (logFile) {
         fprintf(logFile, "Brightness Shortcut Sysmodule started successfully!\n");
-        fprintf(logFile, "Title ID: 0x0100000000001337\n");
+        fprintf(logFile, "Title ID: 0x0004000001EB3400\n");
         fprintf(logFile, "Timestamp: %lu\n", armGetSystemTick());
         fprintf(logFile, "Process started at boot time\n");
         fprintf(logFile, "Controls: L+R+Up = Increase, L+R+Down = Decrease (hold for continuous)\n");
