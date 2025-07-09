@@ -68,15 +68,15 @@ make
 
 The build process will generate:
 
--   `sysmodule.nsp` - The system module file
--   `sysmodule.npdm` - Metadata file
+-   `sys-brightness-shortcut.nsp` - The system module file
+-   `sys-brightness-shortcut.npdm` - Metadata file
 
 ## File Structure
 
 ```
 ├── source/
 │   └── main.c          # Main sysmodule implementation
-├── sysmodule.json      # System module configuration
+├── sys-brightness-shortcut.json # System module configuration
 ├── Makefile           # Build configuration
 ├── deploy.sh          # Deployment script
 ├── verify.sh          # Verification script

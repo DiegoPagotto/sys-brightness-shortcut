@@ -4,7 +4,7 @@
 # Title ID: 0x0004000001EB3400
 
 TITLE_ID="0004000001EB3400"
-NSP_FILE="sysmodule.nsp"
+NSP_FILE="sys-brightness-shortcut.nsp"
 
 echo "=== Brightness Shortcut Sysmodule Deployment Script ==="
 echo "Title ID: $TITLE_ID"
