@@ -3,7 +3,7 @@
 # Verification script for Brightness Shortcut Sysmodule deployment
 # This script checks if the deployment is ready for Switch installation
 
-TITLE_ID="0100000000001337"
+TITLE_ID="0004000001EB3400"
 DEPLOY_DIR="deploy/atmosphere/contents/$TITLE_ID"
 
 echo "=== Brightness Shortcut Sysmodule Verification ==="
