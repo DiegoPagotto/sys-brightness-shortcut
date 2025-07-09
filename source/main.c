@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <math.h>
 
 // Include the main libnx system header, for Switch development
 #include <switch.h>
@@ -62,6 +63,11 @@ void __appInit(void)
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_SM));
 
+    // Initialize audio service for sound effects
+    rc = audoutInitialize();
+    if (R_FAILED(rc))
+        diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_SM));
+
     // Enable this if you want to use time.
     /*rc = timeInitialize();
     if (R_FAILED(rc))
@@ -87,6 +93,7 @@ void __appInit(void)
 void __appExit(void)
 {
     // Close extra services you added to __appInit here.
+    audoutExit(); // Close audio service
     lblExit(); // Close backlight service
     hidExit(); // Close HID service
     fsdevUnmountAll(); // Disable this if you don't want to use the SD card filesystem.
@@ -120,6 +127,117 @@ Result getBrightness(float *brightness) {
     return lblGetCurrentBrightnessSetting(brightness);
 }
 
+// Audio variables
+static AudioOutBuffer audioOutBuffer;
+static u32 audioOutBufferSize;
+static u32 audioSampleRate = 48000;
+static u32 audioChannelCount = 2;
+static s16 *audioBuffer = NULL;
+static bool audioInitialized = false;
+static u64 lastAudioPlayTime = 0;
+
+// Initialize audio for sound effects
+Result initAudio() {
+    if (audioInitialized) return 0;
+    
+    Result rc = audoutStartAudioOut();
+    if (R_FAILED(rc)) return rc;
+    
+    // Calculate buffer size for a short sound (0.1 seconds)
+    audioOutBufferSize = (audioSampleRate * audioChannelCount * sizeof(s16)) / 10; // 0.1 seconds
+    audioBuffer = (s16*)malloc(audioOutBufferSize);
+    if (!audioBuffer) return MAKERESULT(Module_Libnx, LibnxError_OutOfMemory);
+    
+    // Initialize audio buffer structure
+    audioOutBuffer.next = NULL;
+    audioOutBuffer.buffer = audioBuffer;
+    audioOutBuffer.buffer_size = audioOutBufferSize;
+    audioOutBuffer.data_size = audioOutBufferSize;
+    audioOutBuffer.data_offset = 0;
+    
+    audioInitialized = true;
+    return 0;
+}
+
+// Generate a simple beep sound
+void generateBeep(s16 *buffer, u32 samples, u32 frequency, float volume) {
+    float amplitude = volume * 16384.0f; // Max amplitude for 16-bit audio
+    float angleStep = 2.0f * 3.14159265359f * frequency / audioSampleRate;
+    
+    for (u32 i = 0; i < samples; i++) {
+        float angle = angleStep * i;
+        s16 sample = (s16)(amplitude * sin(angle));
+        
+        // Stereo output (left and right channels)
+        buffer[i * 2] = sample;     // Left channel
+        buffer[i * 2 + 1] = sample; // Right channel
+    }
+}
+
+// Play increase brightness sound effect (higher pitch)
+void playIncreaseSound() {
+    if (!audioInitialized) {
+        if (R_FAILED(initAudio())) return;
+    }
+    
+    // Check if enough time has passed since last audio play (prevent audio queue buildup)
+    u64 currentTime = armGetSystemTick();
+    u64 ticksPerSecond = armGetSystemTickFreq();
+    if ((currentTime - lastAudioPlayTime) < (ticksPerSecond / 20)) { // 50ms minimum between sounds
+        return;
+    }
+    
+    // Wait for any pending audio buffer to finish
+    AudioOutBuffer *releasedBuffer;
+    u32 releasedBufferCount;
+    audoutGetReleasedAudioOutBuffer(&releasedBuffer, &releasedBufferCount);
+    
+    u32 samples = audioOutBufferSize / (audioChannelCount * sizeof(s16));
+    generateBeep(audioBuffer, samples, 800, 0.3f); // 800Hz tone, 30% volume
+    
+    // Queue the audio buffer
+    audoutAppendAudioOutBuffer(&audioOutBuffer);
+    lastAudioPlayTime = currentTime;
+}
+
+// Play decrease brightness sound effect (lower pitch)
+void playDecreaseSound() {
+    if (!audioInitialized) {
+        if (R_FAILED(initAudio())) return;
+    }
+    
+    // Check if enough time has passed since last audio play (prevent audio queue buildup)
+    u64 currentTime = armGetSystemTick();
+    u64 ticksPerSecond = armGetSystemTickFreq();
+    if ((currentTime - lastAudioPlayTime) < (ticksPerSecond / 20)) { // 50ms minimum between sounds
+        return;
+    }
+    
+    // Wait for any pending audio buffer to finish
+    AudioOutBuffer *releasedBuffer;
+    u32 releasedBufferCount;
+    audoutGetReleasedAudioOutBuffer(&releasedBuffer, &releasedBufferCount);
+    
+    u32 samples = audioOutBufferSize / (audioChannelCount * sizeof(s16));
+    generateBeep(audioBuffer, samples, 400, 0.3f); // 400Hz tone, 30% volume
+    
+    // Queue the audio buffer
+    audoutAppendAudioOutBuffer(&audioOutBuffer);
+    lastAudioPlayTime = currentTime;
+}
+
+// Cleanup audio resources
+void cleanupAudio() {
+    if (audioInitialized) {
+        audoutStopAudioOut();
+        if (audioBuffer) {
+            free(audioBuffer);
+            audioBuffer = NULL;
+        }
+        audioInitialized = false;
+    }
+}
+
 // Main program entrypoint
 int main(int argc, char* argv[])
 {
@@ -136,7 +254,8 @@ int main(int argc, char* argv[])
         fprintf(logFile, "Title ID: 0x0100000000001337\n");
         fprintf(logFile, "Timestamp: %lu\n", armGetSystemTick());
         fprintf(logFile, "Process started at boot time\n");
-        fprintf(logFile, "Controls: L+R+Up = Increase, L+R+Down = Decrease\n");
+        fprintf(logFile, "Controls: L+R+Up = Increase, L+R+Down = Decrease (hold for continuous)\n");
+        fprintf(logFile, "Features: Sound effects enabled for brightness changes\n");
         fflush(logFile);
         fclose(logFile);
     }
@@ -150,6 +269,8 @@ int main(int argc, char* argv[])
     float currentBrightness = 0.5f;
     bool lastUpPressed = false;
     bool lastDownPressed = false;
+    u64 lastBrightnessChangeTime = 0;
+    u64 lastButtonPressTime = 0;
     
     // Get current brightness
     Result rc = getBrightness(&currentBrightness);
@@ -179,49 +300,95 @@ int main(int argc, char* argv[])
     while (true) {
         padUpdate(&pad);
         u64 kHeld = padGetButtons(&pad);
+        u64 currentTime = armGetSystemTick();
         
         // Check if L and R are being pressed (combination for brightness control)
         if ((kHeld & HidNpadButton_L) && (kHeld & HidNpadButton_R)) {
             bool upPressed = (kHeld & HidNpadButton_Up) != 0;
             bool downPressed = (kHeld & HidNpadButton_Down) != 0;
             
-            // Increase brightness (Up pressed and wasn't pressed before)
-            if (upPressed && !lastUpPressed) {
-                currentBrightness += 0.1f;
-                if (currentBrightness > 1.0f) currentBrightness = 1.0f;
-                
-                Result rc = setBrightness(currentBrightness);
-                logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
-                if (logFile) {
-                    if (R_FAILED(rc)) {
-                        fprintf(logFile, "Error setting brightness: 0x%x\n", rc);
-                    } else {
-                        // Update current value from system
-                        getBrightness(&currentBrightness);
-                        fprintf(logFile, "Brightness increased to: %.1f%%\n", currentBrightness * 100.0f);
+            // Calculate timing for continuous adjustment
+            u64 initialDelay = ticksPerSecond / 2; // 500ms initial delay
+            u64 repeatDelay = ticksPerSecond / 10; // 100ms repeat delay
+            bool shouldAdjust = false;
+            
+            // Increase brightness
+            if (upPressed) {
+                if (!lastUpPressed) {
+                    // First press - immediate action
+                    shouldAdjust = true;
+                    lastButtonPressTime = currentTime;
+                    lastBrightnessChangeTime = currentTime;
+                } else {
+                    // Holding - check timing
+                    if ((currentTime - lastButtonPressTime) > initialDelay && 
+                        (currentTime - lastBrightnessChangeTime) > repeatDelay) {
+                        shouldAdjust = true;
+                        lastBrightnessChangeTime = currentTime;
                     }
-                    fflush(logFile);
-                    fclose(logFile);
+                }
+                
+                if (shouldAdjust) {
+                    currentBrightness += 0.1f;
+                    if (currentBrightness > 1.0f) currentBrightness = 1.0f;
+                    
+                    Result rc = setBrightness(currentBrightness);
+                    
+                    // Play increase sound effect
+                    playIncreaseSound();
+                    
+                    logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
+                    if (logFile) {
+                        if (R_FAILED(rc)) {
+                            fprintf(logFile, "Error setting brightness: 0x%x\n", rc);
+                        } else {
+                            // Update current value from system
+                            getBrightness(&currentBrightness);
+                            fprintf(logFile, "Brightness increased to: %.1f%% [♪]\n", currentBrightness * 100.0f);
+                        }
+                        fflush(logFile);
+                        fclose(logFile);
+                    }
                 }
             }
             
-            // Decrease brightness (Down pressed and wasn't pressed before)
-            if (downPressed && !lastDownPressed) {
-                currentBrightness -= 0.1f;
-                if (currentBrightness < 0.0f) currentBrightness = 0.0f;
-                
-                Result rc = setBrightness(currentBrightness);
-                logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
-                if (logFile) {
-                    if (R_FAILED(rc)) {
-                        fprintf(logFile, "Error setting brightness: 0x%x\n", rc);
-                    } else {
-                        // Update current value from system
-                        getBrightness(&currentBrightness);
-                        fprintf(logFile, "Brightness decreased to: %.1f%%\n", currentBrightness * 100.0f);
+            // Decrease brightness
+            if (downPressed) {
+                if (!lastDownPressed) {
+                    // First press - immediate action
+                    shouldAdjust = true;
+                    lastButtonPressTime = currentTime;
+                    lastBrightnessChangeTime = currentTime;
+                } else {
+                    // Holding - check timing
+                    if ((currentTime - lastButtonPressTime) > initialDelay && 
+                        (currentTime - lastBrightnessChangeTime) > repeatDelay) {
+                        shouldAdjust = true;
+                        lastBrightnessChangeTime = currentTime;
                     }
-                    fflush(logFile);
-                    fclose(logFile);
+                }
+                
+                if (shouldAdjust) {
+                    currentBrightness -= 0.1f;
+                    if (currentBrightness < 0.0f) currentBrightness = 0.0f;
+                    
+                    Result rc = setBrightness(currentBrightness);
+                    
+                    // Play decrease sound effect
+                    playDecreaseSound();
+                    
+                    logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
+                    if (logFile) {
+                        if (R_FAILED(rc)) {
+                            fprintf(logFile, "Error setting brightness: 0x%x\n", rc);
+                        } else {
+                            // Update current value from system
+                            getBrightness(&currentBrightness);
+                            fprintf(logFile, "Brightness decreased to: %.1f%% [♪]\n", currentBrightness * 100.0f);
+                        }
+                        fflush(logFile);
+                        fclose(logFile);
+                    }
                 }
             }
             
@@ -249,6 +416,9 @@ int main(int argc, char* argv[])
         // Sleep for 50ms to reduce CPU usage while maintaining responsiveness
         svcSleepThread(50000000ULL); // 50ms in nanoseconds
     }
+
+    // Cleanup audio resources before exit
+    cleanupAudio();
 
     // This should never be reached, but included for completeness
     return 0;
