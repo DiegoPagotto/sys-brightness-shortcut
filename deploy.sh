@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Deployment script for Example Sysmodule
+# Deployment script for Brightness Shortcut Sysmodule
 # Title ID: 0x0100000000001337
 
 TITLE_ID="0100000000001337"
 NSP_FILE="sysmodule.nsp"
 
-echo "=== Example Sysmodule Deployment Script ==="
+echo "=== Brightness Shortcut Sysmodule Deployment Script ==="
 echo "Title ID: $TITLE_ID"
 echo ""
 
@@ -45,7 +45,8 @@ echo ""
 echo "To install on your Switch:"
 echo "1. Copy the contents of ./deploy/ to your SD card root"
 echo "2. Reboot your Switch"
-echo "3. Check Hekate toolbox > Background services for 'sys-example'"
-echo "4. Check sdmc:/atmosphere/logs/example_sysmodule.log for output"
+echo "3. Check Hekate toolbox > Background services for 'sys-brightness-shortcut'"
+echo "4. Check sdmc:/atmosphere/logs/brightness_shortcut.log for output"
+echo "5. Use L+R+Up/Down to control brightness system-wide!"
 echo ""
 echo "✅ Auto-loading at boot is ENABLED (boot2.flag present)"

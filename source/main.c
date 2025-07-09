@@ -53,9 +53,14 @@ void __appInit(void)
     }
 
     // Enable this if you want to use HID.
-    /*rc = hidInitialize();
+    rc = hidInitialize();
     if (R_FAILED(rc))
-        diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_HID));*/
+        diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_HID));
+
+    // Initialize backlight control service
+    rc = lblInitialize();
+    if (R_FAILED(rc))
+        diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_SM));
 
     // Enable this if you want to use time.
     /*rc = timeInitialize();
@@ -82,15 +87,38 @@ void __appInit(void)
 void __appExit(void)
 {
     // Close extra services you added to __appInit here.
+    lblExit(); // Close backlight service
+    hidExit(); // Close HID service
     fsdevUnmountAll(); // Disable this if you don't want to use the SD card filesystem.
     fsExit(); // Disable this if you don't want to use the filesystem.
     //timeExit(); // Enable this if you want to use time.
-    //hidExit(); // Enable this if you want to use HID.
 }
 
 #ifdef __cplusplus
 }
 #endif
+
+// Brightness control functions
+Result setBrightness(float brightness) {
+    // Ensure brightness is between 0.0 and 1.0
+    if (brightness < 0.0f) brightness = 0.0f;
+    if (brightness > 1.0f) brightness = 1.0f;
+    
+    // Set brightness in settings
+    Result rc = lblSetCurrentBrightnessSetting(brightness);
+    if (R_FAILED(rc)) return rc;
+    
+    // Apply brightness immediately to screen
+    rc = lblApplyCurrentBrightnessSettingToBacklight();
+    if (R_FAILED(rc)) return rc;
+    
+    // Save the setting
+    return lblSaveCurrentSetting();
+}
+
+Result getBrightness(float *brightness) {
+    return lblGetCurrentBrightnessSetting(brightness);
+}
 
 // Main program entrypoint
 int main(int argc, char* argv[])
@@ -102,57 +130,126 @@ int main(int argc, char* argv[])
     mkdir("sdmc:/atmosphere/logs", 0777);
     
     // Create a log file to show the sysmodule is working
-    FILE* logFile = fopen("sdmc:/atmosphere/logs/example_sysmodule.log", "w");
+    FILE* logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "w");
     if (logFile) {
-        fprintf(logFile, "Example Sysmodule started successfully!\n");
+        fprintf(logFile, "Brightness Shortcut Sysmodule started successfully!\n");
         fprintf(logFile, "Title ID: 0x0100000000001337\n");
         fprintf(logFile, "Timestamp: %lu\n", armGetSystemTick());
         fprintf(logFile, "Process started at boot time\n");
+        fprintf(logFile, "Controls: L+R+Up = Increase, L+R+Down = Decrease\n");
         fflush(logFile);
         fclose(logFile);
     }
 
-    // Your code / main loop goes here.
-    // Simple example: run for 60 seconds then exit
+    // Initialize controller input
+    PadState pad;
+    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+    padInitializeDefault(&pad);
+    
+    // Brightness control variables
+    float currentBrightness = 0.5f;
+    bool lastUpPressed = false;
+    bool lastDownPressed = false;
+    
+    // Get current brightness
+    Result rc = getBrightness(&currentBrightness);
+    if (R_FAILED(rc)) {
+        logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
+        if (logFile) {
+            fprintf(logFile, "Warning: Could not get current brightness: 0x%x\n", rc);
+            fflush(logFile);
+            fclose(logFile);
+        }
+        currentBrightness = 0.5f; // Default fallback
+    }
+
+    // Log initial brightness
+    logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
+    if (logFile) {
+        fprintf(logFile, "Initial brightness: %.1f%%\n", currentBrightness * 100.0f);
+        fflush(logFile);
+        fclose(logFile);
+    }
+
+    // Main loop - run indefinitely as a background service
     u64 startTick = armGetSystemTick();
+    u64 lastLogTick = startTick;
     u64 ticksPerSecond = armGetSystemTickFreq();
     
-    // Log every 10 seconds to show it's running
-    u64 lastLogTick = startTick;
-    
     while (true) {
+        padUpdate(&pad);
+        u64 kHeld = padGetButtons(&pad);
+        
+        // Check if L and R are being pressed (combination for brightness control)
+        if ((kHeld & HidNpadButton_L) && (kHeld & HidNpadButton_R)) {
+            bool upPressed = (kHeld & HidNpadButton_Up) != 0;
+            bool downPressed = (kHeld & HidNpadButton_Down) != 0;
+            
+            // Increase brightness (Up pressed and wasn't pressed before)
+            if (upPressed && !lastUpPressed) {
+                currentBrightness += 0.1f;
+                if (currentBrightness > 1.0f) currentBrightness = 1.0f;
+                
+                Result rc = setBrightness(currentBrightness);
+                logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
+                if (logFile) {
+                    if (R_FAILED(rc)) {
+                        fprintf(logFile, "Error setting brightness: 0x%x\n", rc);
+                    } else {
+                        // Update current value from system
+                        getBrightness(&currentBrightness);
+                        fprintf(logFile, "Brightness increased to: %.1f%%\n", currentBrightness * 100.0f);
+                    }
+                    fflush(logFile);
+                    fclose(logFile);
+                }
+            }
+            
+            // Decrease brightness (Down pressed and wasn't pressed before)
+            if (downPressed && !lastDownPressed) {
+                currentBrightness -= 0.1f;
+                if (currentBrightness < 0.0f) currentBrightness = 0.0f;
+                
+                Result rc = setBrightness(currentBrightness);
+                logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
+                if (logFile) {
+                    if (R_FAILED(rc)) {
+                        fprintf(logFile, "Error setting brightness: 0x%x\n", rc);
+                    } else {
+                        // Update current value from system
+                        getBrightness(&currentBrightness);
+                        fprintf(logFile, "Brightness decreased to: %.1f%%\n", currentBrightness * 100.0f);
+                    }
+                    fflush(logFile);
+                    fclose(logFile);
+                }
+            }
+            
+            lastUpPressed = upPressed;
+            lastDownPressed = downPressed;
+        } else {
+            lastUpPressed = false;
+            lastDownPressed = false;
+        }
+        
+        // Log status every 5 minutes to show the service is running
         u64 currentTick = armGetSystemTick();
         u64 elapsedSeconds = (currentTick - startTick) / ticksPerSecond;
-        
-        // Log every 10 seconds
-        if ((currentTick - lastLogTick) / ticksPerSecond >= 10) {
-            logFile = fopen("sdmc:/atmosphere/logs/example_sysmodule.log", "a");
+        if ((currentTick - lastLogTick) / ticksPerSecond >= 300) { // 5 minutes
+            logFile = fopen("sdmc:/atmosphere/logs/brightness_shortcut.log", "a");
             if (logFile) {
-                fprintf(logFile, "Sysmodule running... %lu seconds elapsed\n", elapsedSeconds);
+                fprintf(logFile, "Service running... %lu seconds elapsed, brightness: %.1f%%\n", 
+                        elapsedSeconds, currentBrightness * 100.0f);
                 fflush(logFile);
                 fclose(logFile);
             }
             lastLogTick = currentTick;
         }
         
-        // Exit after 60 seconds for demonstration
-        if (elapsedSeconds >= 60) {
-            break;
-        }
-        
-        // Sleep for 1 second
-        svcSleepThread(1000000000ULL); // 1 second in nanoseconds
-    }
-    
-    // Write completion log
-    logFile = fopen("sdmc:/atmosphere/logs/example_sysmodule.log", "a");
-    if (logFile) {
-        fprintf(logFile, "Sysmodule completed execution after 60 seconds\n");
-        fprintf(logFile, "Process terminated normally\n");
-        fflush(logFile);
-        fclose(logFile);
+        // Sleep for 50ms to reduce CPU usage while maintaining responsiveness
+        svcSleepThread(50000000ULL); // 50ms in nanoseconds
     }
 
-    // Deinitialization and resources clean up code can go here.
+    // This should never be reached, but included for completeness
     return 0;
 }
