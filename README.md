@@ -1,5 +1,7 @@
 # Nintendo Switch Brightness Control Sysmodule
 
+![Brightness Shortcut](assets/banner.png)
+
 A Nintendo Switch system module (sysmodule) that provides convenient brightness control shortcuts with an on-screen brightness bar and audio feedback.
 
 ## Features
@@ -21,6 +23,14 @@ A Nintendo Switch system module (sysmodule) that provides convenient brightness 
 Hold the buttons for continuous adjustment. Initial delay of 500ms, then repeats every 100ms.
 
 ## Installation
+
+### From a Release
+
+1. Download `sys-brightness-shortcut-vX.Y.Z.zip` from the [releases page](https://github.com/DiegoPagotto/sys-brightness-shortcut/releases), or install it from the Homebrew App Store
+2. Extract it to your SD card root
+3. Reboot your Nintendo Switch
+
+Always reboot after installing or enabling the sysmodule: the on-screen indicator only works when the sysmodule starts before the HOME menu, so turning it on from an overlay (Ultrahand/ovl-sysmodules) while the console is running gives a working shortcut without the bar.
 
 ### Automated Installation (Recommended)
 
@@ -124,4 +134,4 @@ This project follows standard Nintendo Switch homebrew development practices. Wh
 
 ## License
 
-This project is intended for homebrew development and educational purposes.
+MIT, see [LICENSE](LICENSE).

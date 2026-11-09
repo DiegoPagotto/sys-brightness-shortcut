@@ -1,5 +1,5 @@
 {
 	"name"  : "sys-brightness-shortcut",
 	"tid"   : "0004000001EB3400",
-	"requires_reboot": false
+	"requires_reboot": true
 }
