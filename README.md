@@ -1,13 +1,14 @@
 # Nintendo Switch Brightness Control Sysmodule
 
-A Nintendo Switch system module (sysmodule) that provides convenient brightness control shortcuts with audio feedback.
+A Nintendo Switch system module (sysmodule) that provides convenient brightness control shortcuts with an on-screen brightness bar and audio feedback.
 
 ## Features
 
 -   **Quick Brightness Control**: Use L+R+Up/Down button combinations to adjust screen brightness
--   **Audio Feedback**: Plays distinctive sound effects when brightness is changed (higher pitch for increase, lower pitch for decrease)
+-   **On-Screen Indicator**: A Steam Deck-style bar (sun icon, animated fill, percentage) slides in at the top-left corner of the screen on every change and fades out 1.5s after the last one. It draws on its own display layer (registered in every layer stack, like Tesla/Ultrahand overlays), so it works over games and the HOME menu; it also shows up in screenshots and recordings taken while it is visible
+-   **Audio Feedback**: A soft, mallet-like "tock" (smooth attack, decaying harmonics, short stereo reflections) instead of a raw beep. Pitch follows the brightness level along a pentatonic scale, so going up or down plays a rising or falling melody
 -   **Continuous Adjustment**: Hold buttons for continuous brightness changes with proper timing delays
--   **Background Service**: Runs as a system service that starts automatically with the console
+-   **Background Service**: Runs as a system service that starts automatically with the console. HID, backlight and audio services are opened 10 seconds after boot, so the shortcut becomes available shortly after the HOME menu appears
 -   **Logging**: Creates detailed logs for debugging and monitoring at `sdmc:/atmosphere/logs/brightness_shortcut.log`
 
 ## Controls
@@ -47,9 +48,11 @@ If you prefer manual installation:
 ## Technical Details
 
 -   **Title ID**: `0x0004000001EB3400`
--   **Services Used**: HID (input), LBL (backlight), AudioOut (sound effects), FS (file system)
--   **CPU Usage**: Optimized with 50ms sleep intervals to minimize system impact
--   **Audio**: 48kHz stereo output with generated sine wave tones
+-   **Services Used**: HID (input), LBL (backlight), AudioOut (sound effects), VI + nvdrv (on-screen indicator), FS (file system)
+-   **Session Usage**: LBL is connected only for the duration of each brightness change. LBL has a tight system-wide session limit, and Atmosphère's fatal handler aborts if it cannot open one to show its error screen (holding an LBL session permanently can turn any fatal error into an Exosphère panic)
+-   **CPU Usage**: 50ms polling while idle; ~60 Hz only while the indicator is animating
+-   **Audio**: 48kHz stereo, 120ms synthesized ticks queued through a small buffer pool
+-   **Indicator**: 320x72 RGBA8888 software-rendered framebuffer on a managed VI layer (480x108 at 1080p). The layer is created right at startup, before the HOME menu comes up (layers created afterwards are never shown), and kept for the process lifetime with a transparent frame while hidden
 -   **Brightness Range**: 0% to 100% in 10% increments
 
 ## Building
@@ -75,7 +78,12 @@ The build process will generate:
 
 ```
 ├── source/
-│   └── main.c          # Main sysmodule implementation
+│   ├── main.c          # Input handling and brightness control
+│   ├── osd.c           # Display layer setup and indicator animation
+│   ├── osd_render.c    # Indicator renderer (pure C, anti-aliased shapes and digits)
+│   ├── sound.c         # AudioOut buffer management
+│   ├── tone.c          # Feedback sound synthesis
+│   └── log.c           # SD card logging
 ├── sys-brightness-shortcut.json # System module configuration
 ├── Makefile           # Build configuration
 ├── deploy.sh          # Deployment script
@@ -87,7 +95,7 @@ The build process will generate:
 
 The sysmodule creates logs at `sdmc:/atmosphere/logs/brightness_shortcut.log` with:
 
--   Startup confirmation
+-   Startup confirmation and per-service initialization steps with system ticks (comparable to `OccurrenceTick` in `atmosphere/erpt_reports`)
 -   Brightness change events with timestamps
 -   Error messages for debugging
 -   Periodic status updates (every 5 minutes)
